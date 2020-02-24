@@ -55,6 +55,7 @@ namespace PinPthread
   class Hthread;
   class CacheL1;
   class CacheL2;
+  class CacheL3;  //zmz modify
   class Directory;
   class RBoL;
   class Crossbar;
@@ -132,6 +133,7 @@ namespace PinPthread
       bool     skip_all_instrs;
       bool     simulate_only_data_caches;
       bool     show_l2_stat_per_interval;
+      bool     show_l3_stat_per_interval; // zmz modify
       bool     is_race_free_application;
       uint32_t max_acc_queue_size;
       uint32_t num_hthreads;
@@ -147,6 +149,7 @@ namespace PinPthread
       vector<CacheL1 *>          l1ds;
       vector<CacheL1 *>          l1is;
       vector<CacheL2 *>          l2s;
+      vector<CacheL3 *>          l3s; // zmz modify
       NoC *                      noc;
       vector<Directory *>        dirs;
       vector<RBoL *>             rbols;
@@ -160,6 +163,7 @@ namespace PinPthread
       uint64_t get_curr_time() const    { return global_q->curr_time; }
       void     show_state(uint64_t);
       void     show_l2_cache_summary();
+      void     show_l3_cache_summary(); // zmz modify
 
       map<uint64_t, uint64_t>   os_page_req_dist; 
       void update_os_page_req_dist(uint64_t addr);
@@ -182,6 +186,8 @@ namespace PinPthread
       uint64_t num_l1_miss_last;
       uint64_t num_l2_acc_last;
       uint64_t num_l2_miss_last;
+      uint64_t num_l3_acc_last;   // zmz modify
+      uint64_t num_l3_miss_last; // zmz modify
       uint64_t num_dependency_distance_last;
 
       uint32_t num_hint;

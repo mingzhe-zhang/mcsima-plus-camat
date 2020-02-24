@@ -182,6 +182,56 @@ namespace PinPthread
       void test_tags(uint32_t set);
   };
 
+  // zmz modify
+  class CacheL3 : public Cache
+  {
+    public:
+      class L3Entry
+      {
+        public:
+          uint64_t tag;
+          coherence_state_type  type;  // cs_type between L3 and DIR
+          coherence_state_type  type_l2l3;  // cs_type between L2 and L3
+          std::set<Component *> sharedl2;
+          LocalQueueElement *   pending;
+          uint64_t first_access_time;
+          uint64_t last_access_time;
+
+          L3Entry() : tag(0), type(cs_invalid), type_l2l3(cs_invalid),  sharedl2(),
+                      pending(NULL), first_access_time(0), last_access_time(0) { }
+      };
+
+      CacheL3(component_type type_, uint32_t num_, McSim * mcsim_);
+      virtual ~CacheL3();
+
+      void add_req_event(uint64_t, LocalQueueElement *, Component * from = NULL);
+      void add_rep_event(uint64_t, LocalQueueElement *, Component * from = NULL);
+      uint32_t process_event(uint64_t curr_time);
+      void show_state(uint64_t);
+
+      Directory * directory;  // downlink
+      NoC  * crossbar;        // downlink
+      std::vector<CacheL2  *> cachel2; // uplink
+      L3Entry *** tags;  // address + coherence state of a set-associative cache
+
+    //private:
+      const uint32_t l3_to_l2_t;
+      const uint32_t l3_to_dir_t;
+      const uint32_t l3_to_xbar_t;
+      const uint32_t num_flits_per_packet;
+      uint32_t       num_banks_log2;
+
+      uint64_t       num_destroyed_cache_lines;
+      uint64_t       cache_line_life_time;
+      uint64_t       time_between_last_access_and_cache_destroy;
+      uint64_t       num_ev_from_l2;
+      uint64_t       num_ev_from_l2_miss;
+      bool           always_hit;
+      bool           display_life_time;
+
+      void add_event_to_LL(uint64_t curr_time, LocalQueueElement *, bool check_top, bool is_data = false);
+      void test_tags(uint32_t set);
+  };
 }
 
 #endif

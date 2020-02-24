@@ -69,6 +69,8 @@ ostream& operator<<(ostream & output, component_type ct)
     case ct_cachel2:   output << "ct_l2$"; break;
     case ct_cachel2_t1:output << "ct_l2$_t1"; break;
     case ct_cachel2_t2:output << "ct_l2$_t2"; break;
+    case ct_cachel3_t1:output << "ct_l3$_t1"; break; // zmz modify
+    case ct_cachel3_t2:output << "ct_l3$_t2"; break; // zmz modify
     case ct_directory: output << "ct_dir"; break;
     case ct_crossbar:  output << "ct_xbar"; break;
     case ct_rbol:      output << "ct_rbol"; break;
@@ -175,9 +177,10 @@ McSim::McSim(PthreadTimingSimulator * pts_)
   skip_all_instrs(pts_->get_param_str("pts.skip_all_instrs") == "true" ? true : false),
   simulate_only_data_caches(pts_->get_param_str("pts.simulate_only_data_caches") == "true" ? true : false),
   show_l2_stat_per_interval(pts_->get_param_str("pts.show_l2_stat_per_interval") == "true" ? true : false),
+  show_l3_stat_per_interval(pts_->get_param_str("pts.show_l3_stat_per_interval") == "true" ? true : false), /* zmz modify */ 
   is_race_free_application(pts_->get_param_str("pts.is_race_free_application") == "false" ? false : true),
   max_acc_queue_size(pts_->get_param_uint64("pts.max_acc_queue_size", 1000)),
-  cores(), hthreads(), l1ds(), l1is(), l2s(), dirs(), rbols(), mcs(), tlbl1ds(), tlbl1is(), comps(),
+  cores(), hthreads(), l1ds(), l1is(), l2s(), /*zmz modify*/l3s(), dirs(), rbols(), mcs(), tlbl1ds(), tlbl1is(), comps(),
   num_fetched_instrs(0), num_instrs_printed_last_time(0),
   num_destroyed_cache_lines_last_time(0), cache_line_life_time_last_time(0),
   time_between_last_access_and_cache_destroy_last_time(0)
@@ -194,6 +197,7 @@ McSim::McSim(PthreadTimingSimulator * pts_)
   uint32_t num_threads_per_l1_cache   = pts->get_param_uint64("pts.num_hthreads_per_l1$", 4);
   assert(use_o3core == false || num_threads_per_l1_cache == 1);
   uint32_t num_l1_caches_per_l2_cache = pts->get_param_uint64("pts.num_l1$_per_l2$", 2);
+  uint32_t num_l2_caches_per_l3_cache = pts->get_param_uint64("pts.num_l2$_per_l3$", 2); // zmz modify
   uint32_t num_mcs                    = pts->get_param_uint64("pts.num_mcs", 2);
   print_interval                      = pts->get_param_uint64("pts.print_interval", 1000000);
   string   noc_type(pts->get_param_str("pts.noc_type"));
@@ -215,10 +219,12 @@ McSim::McSim(PthreadTimingSimulator * pts_)
   num_l1_miss_last        = 0;
   num_l2_acc_last         = 0;
   num_l2_miss_last        = 0;
+  num_l3_acc_last         = 0; // zmz modify
+  num_l3_miss_last        = 0; // zmz modify
   num_dependency_distance_last = 0;
 
   if (noc_type != "mesh" && noc_type != "ring" &&
-      num_mcs * num_l1_caches_per_l2_cache * num_threads_per_l1_cache > num_hthreads)
+      num_mcs * num_l1_caches_per_l2_cache * num_l2_caches_per_l3_cache/*zmz modify*/ * num_threads_per_l1_cache > num_hthreads)
   {
     cout << "the number of memory controller must not be larger than the number of L2 caches" << endl;
     exit(1);
@@ -308,6 +314,20 @@ McSim::McSim(PthreadTimingSimulator * pts_)
       l2s[i/num_l1_caches_per_l2_cache]->cachel1d.push_back(l1ds[i]);
     }
 
+    // zmz modify
+    // instantiate L3 caches
+    for (uint32_t i = 0; i < num_hthreads / num_threads_per_l1_cache / num_l1_caches_per_l2_cache / num_l2_caches_per_l3_cache; i++)
+    {
+      l3s.push_back(new CacheL3(ct_cachel3, i , this));
+    }
+
+    // zmz modify
+    // connect l2s and l3s
+    for (uint32_t i = 0; i < num_hthreads / num_threads_per_l1_cache / num_l1_caches_per_l2_cache; i++)
+    {
+
+    }
+    
     if (noc_type == "mesh" || noc_type == "ring")
     {
       if (noc_type == "mesh")

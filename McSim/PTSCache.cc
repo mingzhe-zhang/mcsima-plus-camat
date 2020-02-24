@@ -1832,3 +1832,194 @@ void CacheL2::test_tags(uint32_t set)
     }
   }
 }
+
+// in L3, num_sets is the number of sets of all L3 banks. set_lsb still sets the size of a cache line.
+// bank and set numbers are specified like:
+// [ MSB <-----------------> LSB ]
+// [ ... SETS  BANKS  CACHE_LINE ]
+CacheL3::CacheL3(
+    component_type type_,
+    uint32_t num_,
+    McSim * mcsim_)
+ :Cache(type_, num_, mcsim_),
+  l3_to_l2_t  (get_param_uint64("to_l2_t", 45)),
+  l3_to_dir_t (get_param_uint64("to_dir_t", 90)),
+  l3_to_xbar_t(get_param_uint64("to_xbar_t", 90)),
+  num_flits_per_packet(get_param_uint64("num_flits_per_packet", 1))
+{
+  num_sets         = get_param_uint64("num_sets",  512);
+  num_ways         = get_param_uint64("num_ways",  8);
+  set_lsb          = get_param_uint64("set_lsb",   6);
+  process_interval = get_param_uint64("process_interval", 20);
+  num_banks_log2   = log2(num_banks);
+
+  num_sets_per_subarray = get_param_uint64("num_sets_per_subarray", 1);
+  always_hit            = (get_param_str("always_hit") == "true");
+  display_life_time     = (get_param_str("display_life_time") == "true");
+
+  num_destroyed_cache_lines = 0;
+  cache_line_life_time      = 0;
+  time_between_last_access_and_cache_destroy = 0;
+  num_ev_from_l1      = 0;
+  num_ev_from_l1_miss = 0;
+
+  tags = new L3Entry ** [num_sets];
+  for (uint32_t i = 0; i < num_sets; i++)
+  {
+    tags[i] = new L3Entry * [num_ways];
+    for (uint32_t j = 0; j < num_ways; j++)
+    {
+      tags[i][j] = new L3Entry();
+    }
+  }
+}
+
+CacheL3::~CacheL3()
+{
+
+  if (num_rd_access > 0)
+  {
+    cout << "  -- L3$ [" << setw(3) << num << "] : RD (miss, access)=( "
+      << setw(10) << num_rd_miss << ", " << setw(10) << num_rd_access << ")= " 
+      << setw(6) << setiosflags(ios::fixed) << setprecision(2) << 100.00*num_rd_miss/num_rd_access << "%" << endl;
+  }
+  if (num_wr_access > 0)
+  {
+    cout << "  -- L3$ [" << setw(3) << num << "] : WR (miss, access)=( "
+      << setw(10) << num_wr_miss << ", " << setw(10) << num_wr_access << ")= "
+      << setw(6) << setiosflags(ios::fixed) << setprecision(2) << 100.00*num_wr_miss/num_wr_access << "%" << endl;
+  }
+
+  if (num_ev_coherency > 0 || num_ev_capacity > 0 || num_coherency_access > 0 || num_upgrade_req > 0)
+  {
+    cout << "  -- L3$ [" << setw(3) << num << "] : (ev_coherency, ev_capacity, coherency_access, up_req, bypass, nack)=( "
+         << setw(10) << num_ev_coherency << ", " << setw(10) << num_ev_capacity << ", " 
+         << setw(10) << num_coherency_access << ", " << setw(10) << num_upgrade_req << ", "
+         << setw(10) << num_bypass << ", " << setw(10) << num_nack << ")" << endl;
+  }
+  if (num_ev_from_l2 > 0)
+  {
+    cout << "  -- L2$ [" << setw(3) << num << "] : EV_from_L1 (miss, access)=( "
+         << setw(10) << num_ev_from_l2_miss << ", " << setw(10) << num_ev_from_l2 << ")= "
+         << setiosflags(ios::fixed) << setprecision(2) << 100.0*num_ev_from_l2_miss/num_ev_from_l2 << "%, ";
+  }
+  if (num_rd_access > 0 || num_wr_access > 0)
+  {
+    uint32_t num_cache_lines    = 0;
+    uint32_t num_i_cache_lines  = 0;
+    uint32_t num_e_cache_lines  = 0;
+    uint32_t num_s_cache_lines  = 0;
+    uint32_t num_m_cache_lines  = 0;
+    uint32_t num_tr_cache_lines = 0;
+    int32_t  addr_offset_lsb = get_param_uint64("addr_offset_lsb", "", 48);
+
+    map<uint64_t, uint64_t> dirty_cl_per_offset;
+
+    for (uint32_t j = 0; j < num_sets; j++)
+    {
+      for (uint32_t k = 0; k < num_ways; k++)
+      {
+        L3Entry * iter = tags[j][k];
+        if (iter->type == cs_modified)
+        {
+          uint64_t addr   = ((iter->tag * num_sets) << set_lsb);
+          uint64_t offset = addr >> addr_offset_lsb;
+
+          if (dirty_cl_per_offset.find(offset) == dirty_cl_per_offset.end())
+          {
+            dirty_cl_per_offset[offset] = 1;
+          }
+          else
+          {
+            dirty_cl_per_offset[offset]++;
+          }
+        }
+        switch (iter->type)
+        {
+          case cs_invalid:   num_i_cache_lines++;  break;
+          case cs_exclusive: num_e_cache_lines++;  break;
+          case cs_shared:    num_s_cache_lines++;  break;
+          case cs_modified:  num_m_cache_lines++;  break;
+          default:           num_tr_cache_lines++; break;
+        }
+      }
+    }
+    num_cache_lines = num_i_cache_lines + num_e_cache_lines +
+                      num_s_cache_lines + num_m_cache_lines + num_tr_cache_lines;
+
+    cout << " L3$ (i,e,s,m,tr) ratio=(" 
+      << setiosflags(ios::fixed) << setw(4) << 1000 * num_i_cache_lines  / num_cache_lines << ", "
+      << setiosflags(ios::fixed) << setw(4) << 1000 * num_e_cache_lines  / num_cache_lines << ", "
+      << setiosflags(ios::fixed) << setw(4) << 1000 * num_s_cache_lines  / num_cache_lines << ", "
+      << setiosflags(ios::fixed) << setw(4) << 1000 * num_m_cache_lines  / num_cache_lines << ", "
+      << setiosflags(ios::fixed) << setw(4) << 1000 * num_tr_cache_lines / num_cache_lines << "), num_dirty_lines (pid:#) = ";
+
+    for (map<uint64_t, uint64_t>::iterator m_iter = dirty_cl_per_offset.begin(); m_iter != dirty_cl_per_offset.end(); m_iter++)
+    {
+      cout << m_iter->first << " : " << m_iter->second << " , ";
+    }
+    cout << endl;
+  }
+  if (display_life_time == true && num_destroyed_cache_lines > 0)
+  {
+    cout << "  -- L3$ [" << setw(3) << num << "] : (cache_line_life_time, time_between_last_access_and_cache_destroy) = ("
+      << setiosflags(ios::fixed) << setprecision(2)
+      << 1.0 * cache_line_life_time / (process_interval * num_destroyed_cache_lines) << ", "
+      << setiosflags(ios::fixed) << setprecision(2) 
+      << 1.0 * time_between_last_access_and_cache_destroy / (process_interval * num_destroyed_cache_lines)
+      << ") L3$ cycles" << endl;
+  }
+}
+
+void CacheL3::add_req_event(
+    uint64_t event_time,
+    LocalQueueElement * local_event,
+    Component * from)
+{
+  if (event_time % process_interval != 0)
+  {
+    event_time += process_interval - event_time%process_interval;
+  }
+  geq->add_event(event_time, this);
+  req_event.insert(pair<uint64_t, LocalQueueElement *>(event_time, local_event));
+}
+
+
+void CacheL3::add_rep_event(
+    uint64_t event_time,
+    LocalQueueElement * local_event,
+    Component * from)
+{
+  if (event_time % process_interval != 0)
+  {
+    event_time += process_interval - event_time%process_interval;
+  }
+  geq->add_event(event_time, this);
+  rep_event.insert(pair<uint64_t, LocalQueueElement *>(event_time, local_event));
+}
+
+
+void CacheL3::show_state(uint64_t address)
+{
+  uint32_t set = (address >> set_lsb) % num_sets;
+  uint64_t tag = (address >> set_lsb) / num_sets;
+  list< L3Entry >::iterator set_iter;
+
+  //for (set_iter = tags[set].begin(); set_iter != tags[set].end(); ++set_iter)
+  for (uint32_t k = 0; k < num_ways; k++)
+  {
+    L3Entry * set_iter = tags[set][k];
+    if (set_iter->type != cs_invalid && set_iter->tag == tag)
+    {
+      cout << "  -- L3 [" << num << "] : " << set_iter->type
+        << ", " << set_iter->type_l2l3; 
+      for(std::set<Component *>::iterator iter = set_iter->sharedl2.begin();
+          iter != set_iter->sharedl2.end(); ++iter)
+      {
+        cout << ", (" << (*iter)->type << ", " << (*iter)->num << ") ";
+      }
+      cout << endl;
+      break;
+    }
+  }
+}

@@ -42,7 +42,7 @@ NoC::NoC(
     component_type type_,
     uint32_t num_,
     McSim * mcsim_)
- :Component(type_, num_, mcsim_), directory(), cachel2(),
+ :Component(type_, num_, mcsim_), cachel2(), cachel3(), /*zmz modify*/
   num_req(0), num_rep(0), num_crq(0), num_flits(0), num_data_transfers(0)
 {
 }
@@ -69,7 +69,7 @@ Crossbar::Crossbar(
  :NoC(type_, num_, mcsim_),
   queues(num_ports_), already_sent(num_ports_),
   xbar_to_dir_t(get_param_uint64("to_dir_t", 90)),
-  xbar_to_l2_t (get_param_uint64("to_l2_t", 90)),
+  xbar_to_l3_t (get_param_uint64("to_l3_t", 90)),
   num_ports(num_ports_),
   clockwise(true), top_priority(0)
 {
@@ -201,8 +201,10 @@ uint32_t Crossbar::process_event(uint64_t curr_time)
         rep_event_iter->second.first->type == et_e_to_i ||
         rep_event_iter->second.first->type == et_e_to_m)
     {
-      uint32_t which_mc = geq->which_mc(rep_event_iter->second.first->address);
-      queues[rep_event_iter->second.second->num].insert(std::pair<noc_priority, EventPair>(noc_rep, EventPair(rep_event_iter->second.first, directory[which_mc])));
+      // zmz modify
+      //uint32_t which_mc = geq->which_mc(rep_event_iter->second.first->address);
+      uint32_t which_l3 = geq->which_l3(rep_event_iter->second.first->address);
+      queues[rep_event_iter->second.second->num].insert(std::pair<noc_priority, EventPair>(noc_rep, EventPair(rep_event_iter->second.first, cachel3[which_l3]/*directory[which_mc]*/)));
     }
     else
     {
@@ -212,7 +214,7 @@ uint32_t Crossbar::process_event(uint64_t curr_time)
   }
 
   while (crq_event_iter != crq_events.end() && crq_event_iter->first == curr_time)
-  {
+  
     // special case --  from.top() is the target L2
     queues[crq_event_iter->second.second->num].insert(std::pair<noc_priority, EventPair>(noc_crq, EventPair(crq_event_iter->second.first, crq_event_iter->second.first->from.top())));
     crq_event_iter->second.first->from.pop();
@@ -222,8 +224,10 @@ uint32_t Crossbar::process_event(uint64_t curr_time)
   while (req_event_iter != req_events.end() && req_event_iter->first == curr_time)
   {
     // process the first request event
-    uint32_t which_mc  = geq->which_mc(req_event_iter->second.first->address);  // TODO : it is assumed that (directory[i]->num == i)
-    queues[req_event_iter->second.second->num].insert(std::pair<noc_priority, EventPair>(noc_req, EventPair(req_event_iter->second.first, directory[which_mc])));
+    // zmz modify
+    //uint32_t which_mc  = geq->which_mc(req_event_iter->second.first->address);  // TODO : it is assumed that (directory[i]->num == i)
+    uint32_t which_l3  = geq->which_l3(req_event_iter->second.first->address);  
+    queues[req_event_iter->second.second->num].insert(std::pair<noc_priority, EventPair>(noc_req, EventPair(req_event_iter->second.first, cachel3[which_l3]/*directory[which_mc]*/)));
     ++req_event_iter;
   }
   
@@ -424,7 +428,7 @@ void Mesh2D::add_crq_event(
   uint32_t col = mc_pos[mc_num] % num_cols;
   uint32_t row = mc_pos[mc_num] / num_cols;
 
-  crq_qs[row][col][mesh_directory].insert(pair<uint64_t, EventPair>(event_time, EventPair(local_event, from)));
+  crq_qs[row][col][mesh_l3/*mesh_directory*/].insert(pair<uint64_t, EventPair>(event_time, EventPair(local_event, from)));
   ++num_req_in_mesh;
   ++num_crq;
   num_flits++;
@@ -492,7 +496,7 @@ void Mesh2D::add_rep_event(
     col = mc_pos[mc_num] % num_cols;
     row = mc_pos[mc_num] / num_cols;
 
-    rep_qs[row][col][mesh_directory].insert(pair<uint64_t, EventPair>(event_time, EventPair(local_event, from)));
+    rep_qs[row][col][mesh_l3/*mesh_directory*/].insert(pair<uint64_t, EventPair>(event_time, EventPair(local_event, from)));
   }
   ++num_req_in_mesh;
   ++num_rep;
@@ -576,7 +580,9 @@ void Mesh2D::process_qs(
     uint64_t curr_time)
 {
   vector< vector< vector< multimap<uint64_t, EventPair > > > > * curr_qs;
-  Directory * to_dir = NULL;
+  // zmz modify
+  //Directory * to_dir = NULL;
+  CacheL3   * to_l3  = NULL;
   CacheL2   * to_l2  = NULL;
   uint32_t  col, row;
 
@@ -612,11 +618,13 @@ void Mesh2D::process_qs(
           curr_q.first->type == et_e_to_m ||
           curr_q.first->type == et_e_to_i)
       {
-        // to directory
-        uint32_t which_mc = geq->which_mc(curr_q.first->address);
+        // to L3 (ORIGINAL: to directory) // zmz modify
+        //uint32_t which_mc = geq->which_mc(curr_q.first->address);
+        uint32_t which_l3 = geq->which_l3(curr_q.first->address);
         col = mc_pos[which_mc] % num_cols;
         row = mc_pos[which_mc] / num_cols;
-        to_dir = directory[which_mc];
+        //to_dir = directory[which_mc];
+        to_l3 = cachel3[which_l3];
       }
       else
       {
@@ -636,10 +644,13 @@ void Mesh2D::process_qs(
       break;
     case noc_req:
       {
-      uint32_t which_mc = geq->which_mc(curr_q.first->address);
-      col = mc_pos[which_mc] % num_cols;
-      row = mc_pos[which_mc] / num_cols;
-      to_dir = directory[which_mc];
+        // zmz modify
+        //uint32_t which_mc = geq->which_mc(curr_q.first->address);
+        uint32_t which_l3 = geq->which_l3(curr_q.first->address);
+        col = mc_pos[which_mc] % num_cols;
+        row = mc_pos[which_mc] / num_cols;
+        //to_dir = directory[which_mc];
+        to_l3 = cachel3[which_l3];
       }
       break;
   }
@@ -684,10 +695,10 @@ void Mesh2D::process_qs(
   }
   else
   {
-    if (to_dir != NULL)
+    if (/*to_dir*/ to_l3 != NULL)
     {
-      // to directory
-      if (already_sent[mesh_directory] == true)
+      // to l3 (ORIGIN: TO directory) // zmz modify
+      if (already_sent[mesh_l3/*mesh_directory*/] == true)
       {
         return;
       }
@@ -695,7 +706,7 @@ void Mesh2D::process_qs(
       {
         curr_q.first->from.pop();
       }
-      already_sent[mesh_directory] = true;
+      already_sent[mesh_l3/*mesh_directory*/] = true;
       //curr_q.first->from.push(this);
       if (curr_q.first->dummy == true)
       {
@@ -758,9 +769,10 @@ Ring::Ring(
 
   uint32_t num_hthreads               = mcsim->pts->get_num_hthreads();
   uint32_t num_threads_per_l1_cache   = get_param_uint64("num_hthreads_per_l1$", "pts.", 4);
-  uint32_t num_l1_caches_per_l2_cache = get_param_uint64("num_l1$_per_l2$", "pts.", 2);
+  uint32_t num_l1_caches_per_l2_cache = get_param_uint64("num_l1$_per_l2$", "pts.", 2); // zmz modify
+  uint32_t num_l2_caches_per_l3_cache = get_param_uint64("num_l2$_per_l3$", "pts.", 2);
   uint32_t num_mcs = get_param_uint64("num_mcs", "pts.", 2);
-  uint32_t num_l2s = num_hthreads / num_threads_per_l1_cache / num_l1_caches_per_l2_cache;
+  uint32_t num_l2s = num_hthreads / num_threads_per_l1_cache / num_l1_caches_per_l2_cache; 
 
   vector<uint32_t> router_radix(num_nodes, 2);
 
@@ -1017,8 +1029,10 @@ void Ring::process_qs(
     uint64_t curr_time)
 {
   vector< vector< multimap<uint64_t, EventPair > > > * curr_qs;
-  Directory * to_dir = NULL;
+  // zmz modify
+  //Directory * to_dir = NULL;
   CacheL2   * to_l2  = NULL;
+  CacheL3   * to_l3  = NULL;
   uint32_t  target_pos;
   uint32_t  target_port_num;
 
@@ -1054,11 +1068,13 @@ void Ring::process_qs(
           curr_q.first->type == et_e_to_m ||
           curr_q.first->type == et_e_to_i)
       {
-        // to directory
+        // to l3 (ORIGIN: to directory) // zmz modify
+        //uint32_t which_mc = geq->which_mc(curr_q.first->address);
         uint32_t which_mc = geq->which_mc(curr_q.first->address);
         target_pos = mc_pos[which_mc];
         target_port_num = mc_port_num[which_mc];
-        to_dir = directory[which_mc];
+        //to_dir = directory[which_mc];
+        to_l3 = cachel3[which_l3];
       }
       else
       {
@@ -1078,10 +1094,13 @@ void Ring::process_qs(
       break;
     case noc_req:
       {
-        uint32_t which_mc = geq->which_mc(curr_q.first->address);
+        // zmz modify
+        //uint32_t which_mc = geq->which_mc(curr_q.first->address);
+        uint32_t which_l3 = geq->which_l3(curr_q.first->address);
         target_pos = mc_pos[which_mc];
         target_port_num = mc_port_num[which_mc];
-        to_dir = directory[which_mc];
+        //to_dir = directory[which_mc];
+        to_l3 = cachel3[which_l3];
       }
       break;
   }
@@ -1113,9 +1132,9 @@ void Ring::process_qs(
   }
   else
   {
-    if (to_dir != NULL)
+    if (/*to_dir*/ to_l3 != NULL)
     {
-      // to directory
+      // to l3 (ORIGIN: TO directory) (zmz modify)
       if (already_sent[target_port_num] == true)
       {
         return;

@@ -47,8 +47,9 @@ namespace PinPthread
       NoC(component_type type_, uint32_t num_, McSim * mcsim_);
       virtual ~NoC();
 
-      vector<Directory *> directory;
+      //vector<Directory *> directory;
       vector<CacheL2   *> cachel2;
+      vector<CacheL3>  *> cachel3; // zmz modify
       uint64_t num_req, num_rep, num_crq, num_flits;
       uint64_t num_data_transfers;
 
@@ -76,7 +77,8 @@ namespace PinPthread
       std::vector< std::multimap<noc_priority, EventPair> > queues;  // <event, to>
       std::vector<bool> already_sent;
 
-      const uint32_t xbar_to_dir_t;
+      //const uint32_t xbar_to_dir_t;
+      const uint32_t xbar_to_l3_t; // zmz modify
       const uint32_t xbar_to_l2_t;
       const uint32_t num_ports;
 
@@ -97,7 +99,7 @@ namespace PinPthread
   class Mesh2D : public NoC
   {
     public:
-      enum mesh_dir { mesh_north, mesh_south, mesh_east, mesh_west, mesh_cluster, mesh_directory, mesh_invalid };
+      enum mesh_dir { mesh_north, mesh_south, mesh_east, mesh_west, mesh_cluster, mesh_l3/*mesh_directory*/, mesh_invalid }; // zmz modify
 
       Mesh2D(component_type type_, uint32_t num_, McSim * mcsim_);
       ~Mesh2D();

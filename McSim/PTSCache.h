@@ -156,8 +156,9 @@ namespace PinPthread
       uint32_t process_event(uint64_t curr_time);
       void show_state(uint64_t);
 
-      Directory * directory;  // downlink
+      // Directory * directory;  // downlink (zmz modify)
       NoC  * crossbar;        // downlink
+      CacheL3 * cahcel3;      // downlink (zmz modify)
       std::vector<CacheL1  *> cachel1d;   // uplink
       std::vector<CacheL1  *> cachel1i;   // uplink
       //std::vector< std::list< L2Entry > > tags;  // address + coherence state of a set-associative cache
@@ -167,6 +168,7 @@ namespace PinPthread
       const uint32_t l2_to_l1_t;
       const uint32_t l2_to_dir_t;
       const uint32_t l2_to_xbar_t;
+      const uint32_t l2_to_l3_t; // zmz modify
       const uint32_t num_flits_per_packet;
       uint32_t       num_banks_log2;
 

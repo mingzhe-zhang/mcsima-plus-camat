@@ -95,6 +95,9 @@ const char * Component::prefix_str() const
     case ct_cachel2:   return "pts.l2$.";
     case ct_cachel2_t1:return "l2$.t1.";
     case ct_cachel2_t2:return "l2$.t2.";
+    case ct_cachel3:   return "pts.l3$"; /*zmz modify*/
+    case ct_cachel3_t1:return "l3$.t1."; /*zmz modify*/
+    case ct_cachel3_t2:return "l3$.t2."; /*zmz modify*/
     case ct_directory: return "pts.dir.";
     case ct_rbol:      return "pts.rbol.";
     case ct_crossbar:  return "pts.xbar.";
@@ -159,6 +162,7 @@ GlobalEventQueue::GlobalEventQueue(McSim * mcsim_)
 {
   num_hthreads = mcsim->pts->get_param_uint64("pts.num_hthreads", max_hthreads);
   num_mcs      = mcsim->pts->get_param_uint64("pts.num_mcs", 2);
+  num_l3s      = mcsim->pts->get_param_uint64("pts.num_l3s", 1); /*zmz modify*/
   interleave_base_bit = mcsim->pts->get_param_uint64("pts.mc.interleave_base_bit", 12);
   interleave_xor_base_bit = mcsim->pts->get_param_uint64("pts.mc.interleave_xor_base_bit", 20);
   page_sz_base_bit = mcsim->pts->get_param_uint64("pts.mc.page_sz_base_bit", 12);
@@ -327,6 +331,12 @@ uint32_t GlobalEventQueue::which_mc(uint64_t address)
 {
   //  return (address >> interleave_base_bit) % num_mcs;
   return ((address >> interleave_base_bit) ^ (address >> interleave_xor_base_bit)) % num_mcs;
+}
+
+// zmz modify
+uint32_t GlobalEventQueue::which_l3(uint64_t address)
+{
+  return ((address >> interleave_base_bit) ^ (address >> interleave_xor_base_bit)) % num_l3s;
 }
 
 

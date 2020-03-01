@@ -58,6 +58,9 @@ namespace PinPthread
     ct_cachel2,
     ct_cachel2_t1,
     ct_cachel2_t2,
+    ct_cachel3, /*zmz modify*/
+    ct_cachel3_t1,/*zmz modify*/
+    ct_cachel3_t2,/*zmz modify*/
     ct_directory,
     ct_crossbar,
     ct_rbol,
@@ -176,11 +179,13 @@ namespace PinPthread
 
       uint32_t num_hthreads;
       uint32_t num_mcs;
+      uint32_t num_l3s; // zmz modify
       uint32_t interleave_base_bit;
       uint32_t interleave_xor_base_bit;
       uint32_t page_sz_base_bit;
       bool     is_asymmetric;
       uint32_t which_mc(uint64_t);  // which mc does an address belong to?
+      uint32_t which_l3(uint64_t);  // which l3 does an address belong to? // zmz modify
   };
 }
 
